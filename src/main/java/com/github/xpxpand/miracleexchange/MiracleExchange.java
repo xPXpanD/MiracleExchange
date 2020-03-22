@@ -1,21 +1,19 @@
 package com.github.xpxpand.miracleexchange;
 
+import com.github.xpxpand.miracleexchange.objects.Pool;
 import com.github.xpxpand.miracleexchange.commands.*;
 import com.github.xpxpand.miracleexchange.utilities.IOMethods;
-import com.google.gson.Gson;
-import net.minecraft.nbt.NBTTagCompound;
-import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.Mod;
+import net.minecraftforge.fml.common.event.FMLInitializationEvent;
 import net.minecraftforge.fml.common.event.FMLServerStartingEvent;
+import net.minecraftforge.server.permission.DefaultPermissionLevel;
+import net.minecraftforge.server.permission.PermissionAPI;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.nio.file.FileSystems;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
-
 
 @Mod
 (
@@ -54,7 +52,8 @@ public class MiracleExchange
     public static final Logger logger = LogManager.getLogger("Miracle Exchange");
 
     // Set up file lists for the different types of Pokémon in our pool.
-    public static final List<NBTTagCompound> pool = new ArrayList<>();
+    //public static List<NBTTagCompound> pool = new ArrayList<>();
+    private Pool pool = Pool.getInstance();
 
     @Mod.EventHandler
     public void onFMLInitEvent(FMLInitializationEvent event)
@@ -73,25 +72,35 @@ public class MiracleExchange
         // Initialize the Pokémon pool, and fill it to cap if necessary. If successful, show what we loaded.
         if (IOMethods.initializePool())
         {
-            logger.info("§f--> §aAdded a total of " + pool.size() + " Pokémon:");
+            logger.info("§f--> §aAdded a total of " + pool.getList().size() + " Pokémon:");
 
-            int ubNum = IOMethods.getUBCount();
-            int legendaryNum = IOMethods.getLegendaryCount();
-            int shinyNum = IOMethods.getShinyCount();
-            int normieNum = pool.size() - ubNum - legendaryNum - shinyNum;
+            // Get our current counts by type, and format messages accordingly.
+            final int ubNum = IOMethods.getCounts().get("UBs");
+            final int legendaryNum = IOMethods.getCounts().get("Legendaries");
+            final int shinyNum = IOMethods.getCounts().get("Shinies");
+            final int normieNum = pool.getList().size() - ubNum - legendaryNum - shinyNum;
 
-            if (ubNum > 0)
+            if (ubNum == 1)
+                logger.info("    §3...§aone Ultra Beast.");
+            else if (ubNum > 1)
                 logger.info("    §3...§a" + ubNum + "§a Ultra Beasts.");
-            if (legendaryNum > 0)
+
+            if (legendaryNum == 1)
+                logger.info("    §3...§aone legendary.");
+            else if (legendaryNum > 1)
                 logger.info("    §3...§a" + legendaryNum + "§a legendaries.");
-            if (shinyNum > 0)
+
+            if (shinyNum == 1)
+                logger.info("    §3...§aone shiny.");
+            else if (shinyNum > 1)
                 logger.info("    §3...§a" + shinyNum + "§a shinies.");
+
             if (normieNum > 0)
             {
-                if (normieNum < pool.size())
+                if (normieNum < pool.getList().size())
                     logger.info("    §3...§aand " + normieNum + "§a normal ones.");
                 else
-                    logger.info("    §3...§a" + normieNum + "§a normal ones.");
+                    logger.info("    §3§a" + normieNum + "§a normal ones. That's it. Yawn.");
             }
         }
 
@@ -108,6 +117,8 @@ public class MiracleExchange
 		event.registerServerCommand(new Clone());
 		event.registerServerCommand(new Flag());
 		event.registerServerCommand(new Reload());
+
+        PermissionAPI.registerNode("miracleexchange.command.staff.reload", DefaultPermissionLevel.OP, "Allows reloading Miracle Exchange's configs via /mereload.");
 	}
 
 }

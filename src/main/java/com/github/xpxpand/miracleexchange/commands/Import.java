@@ -57,7 +57,7 @@ public class Import extends CommandBase
             sender.sendMessage(new TextComponentString("§4Error: §cThis command can only be used in-game."));
         else
         {
-            int slot = Integer.parseInt(args[0]);
+            /*int slot = Integer.parseInt(args[0]);
             PartyStorage party = Pixelmon.storageManager.getParty(sender.getCommandSenderEntity().getUniqueID());
 
             if (party.get(slot - 1) == null)
@@ -140,7 +140,7 @@ public class Import extends CommandBase
                     sender.sendMessage(new TextComponentString("Could not find any files to add."));
             }
             else
-                sender.sendMessage(new TextComponentString("there's something in there, abort"));
+                sender.sendMessage(new TextComponentString("there's something in there, abort"));*/
         }
     }
 }

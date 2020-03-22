@@ -1,5 +1,6 @@
 package com.github.xpxpand.miracleexchange.commands;
 
+import com.github.xpxpand.miracleexchange.objects.Pool;
 import com.github.xpxpand.miracleexchange.utilities.IOMethods;
 import net.minecraft.command.CommandBase;
 import net.minecraft.command.ICommandSender;
@@ -25,8 +26,7 @@ public class Reload extends CommandBase
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        // Clear the pool so we don't get stuck with old data.
-        pool.clear();
+        Pool pool = Pool.getInstance();
 
         // Add a header, and put a blank line above it to avoid clutter with other marginal'd mods.
         logger.info("");
@@ -39,28 +39,37 @@ public class Reload extends CommandBase
         else
             logger.info("§f--> §aChecking for stored Pokémon...");
 
-        // Initialize the Pokémon pool, and fill it to cap if necessary. If successful, show what we loaded.
         if (IOMethods.initializePool())
         {
-            logger.info("§f--> §aAdded a total of " + pool.size() + " Pokémon:");
+            logger.info("§f--> §aAdded a total of " + pool.getList().size() + " Pokémon:");
 
-            int ubNum = IOMethods.getUBCount();
-            int legendaryNum = IOMethods.getLegendaryCount();
-            int shinyNum = IOMethods.getShinyCount();
-            int normieNum = pool.size() - ubNum - legendaryNum - shinyNum;
+            // Get our current counts by type, and format messages accordingly.
+            final int ubNum = IOMethods.getCounts().get("UBs");
+            final int legendaryNum = IOMethods.getCounts().get("Legendaries");
+            final int shinyNum = IOMethods.getCounts().get("Shinies");
+            final int normieNum = pool.getList().size() - ubNum - legendaryNum - shinyNum;
 
-            if (ubNum > 0)
+            if (ubNum == 1)
+                logger.info("    §3...§aone Ultra Beast.");
+            else if (ubNum > 1)
                 logger.info("    §3...§a" + ubNum + "§a Ultra Beasts.");
-            if (legendaryNum > 0)
+
+            if (legendaryNum == 1)
+                logger.info("    §3...§aone legendary.");
+            else if (legendaryNum > 1)
                 logger.info("    §3...§a" + legendaryNum + "§a legendaries.");
-            if (shinyNum > 0)
+
+            if (shinyNum == 1)
+                logger.info("    §3...§aone shiny.");
+            else if (shinyNum > 1)
                 logger.info("    §3...§a" + shinyNum + "§a shinies.");
+
             if (normieNum > 0)
             {
-                if (normieNum < pool.size())
+                if (normieNum < pool.getList().size())
                     logger.info("    §3...§aand " + normieNum + "§a normal ones.");
                 else
-                    logger.info("    §3...§a" + normieNum + "§a normal ones.");
+                    logger.info("    §3§a" + normieNum + "§a normal ones. That's it. Yawn.");
             }
         }
 

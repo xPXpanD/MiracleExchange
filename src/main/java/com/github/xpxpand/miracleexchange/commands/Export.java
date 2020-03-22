@@ -30,7 +30,7 @@ public class Export extends CommandBase
     @Override
     public void execute(MinecraftServer server, ICommandSender sender, String[] args)
     {
-        if (args.length != 1)
+/*        if (args.length != 1)
             sender.sendMessage(new TextComponentString("§4Error: §cInvalid number of arguments."));
         else if (!args[0].matches("^[1-6]"))
             sender.sendMessage(new TextComponentString("§4Error: §cInvalid slot."));
@@ -44,6 +44,6 @@ public class Export extends CommandBase
             Pokemon pokemon = party.get(slot - 1);
             if (pokemon != null)
                 IOMethods.writePokemonAndGetPath(pokemon);
-        }
+        }*/
     }
 }

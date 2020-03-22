@@ -1,5 +1,6 @@
 package com.github.xpxpand.miracleexchange.utilities;
 
+import com.github.xpxpand.miracleexchange.objects.Pool;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParser;
@@ -10,20 +11,24 @@ import com.pixelmonmod.pixelmon.enums.EnumSpecies;
 import net.minecraft.nbt.JsonToNBT;
 import net.minecraft.nbt.NBTException;
 import net.minecraft.nbt.NBTTagCompound;
-import org.apache.commons.io.FileUtils;
 
-import static com.github.xpxpand.miracleexchange.MiracleExchange.*;
-
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import static com.github.xpxpand.miracleexchange.MiracleExchange.*;
 
 public class IOMethods
 {
     private static final Gson gson = new Gson();
+    private static final Pool pool = Pool.getInstance();
 
     // Checks all given paths, and creates folders there if necessary. Passes back whether it created something.
     public static boolean tryCreateDirs(Path... paths)
@@ -47,41 +52,89 @@ public class IOMethods
     // Populates all the Pokémon lists with files of the right type.
     public static boolean initializePool()
     {
+        pool.reset();
+
         try
         {
             boolean foundError = false;
 
-            // Load existing files.
-            for(File file : FileUtils.listFiles(poolPath.toFile(), new String[]{"txt"}, true))
+            // TODO: Load special Pokémon first, so they're always in the pool if present.
+            // Get a list of files sorted by importance. This ensures we always import the most valuable Pokémon first.
+            ArrayList<Path> prioritizedFileList = getImportanceSortedList(currentLegendariesPath, currentUBsPath, currentShiniesPath, poolPath);
+
+            // Start loading existing files.
+            for(Path path : prioritizedFileList)
             {
                 // TODO: Set config pool count.
                 // Make sure we don't overfill, even if there are more files than our cap.
-                if (pool.size() < 100)
+                if (pool.getList().size() < 100)
                 {
-                    if (file.isFile())
+                    if (Files.isRegularFile(path) && path.toString().endsWith(".txt"))
                     {
-                        try
+                        // Read the file. Force UTF-8 to recover characters properly.
+                        try (Stream<String> lines = Files.lines(path, StandardCharsets.UTF_8))
                         {
-                            // Read the file.
-                            String contents = FileUtils.readFileToString(file, StandardCharsets.UTF_8);
+                            // Dump everything into a big ol' String.
+                            String contents = lines.collect(Collectors.joining());
 
-                            // Try to validate the file. Skip execution via exception out if something's wrong.
+                            // Try to validate our file's contents. Skip execution via exception out if something's wrong.
                             gson.fromJson(contents, Object.class);
 
-                            // If we're still here, our Pokémon's importable data is valid. Add it to the pool.
-                            pool.add(JsonToNBT.getTagFromJson(contents));
+                            // If we're still here, our Pokémon's importable data is valid. Get NBT.
+                            NBTTagCompound pokemonNBT = JsonToNBT.getTagFromJson(contents);
+
+                            // Make sure it's in the right folder. Move it if not.
+                            try
+                            {
+                                if (EnumSpecies.ultrabeasts.contains(pokemonNBT.getString("Name")))
+                                {
+                                    if (!path.getParent().equals(currentUBsPath))
+                                    {
+                                        logger.info("    §eMoving §6" + path.getFileName() + "§e to UB folder.");
+                                        Files.move(path, currentUBsPath.resolve(path.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                                    }
+                                }
+                                else if (EnumSpecies.legendaries.contains(pokemonNBT.getString("Name")))
+                                {
+                                    if (!path.getParent().equals(currentLegendariesPath))
+                                    {
+                                        logger.info("    §eMoving §6" + path.getFileName() + "§e to legend folder.");
+                                        Files.move(path, currentLegendariesPath.resolve(path.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                                    }
+                                }
+                                else if (pokemonNBT.getBoolean("IsShiny"))
+                                {
+                                    if (!path.getParent().equals(currentShiniesPath))
+                                    {
+                                        logger.info("    §eMoving §6" + path.getFileName() + "§e to shiny folder.");
+                                        Files.move(path, currentShiniesPath.resolve(path.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                                    }
+                                }
+                                else if (!path.getParent().equals(poolPath))
+                                {
+                                    logger.info("    §eMoving §6" + path.getFileName() + "§e to normal folder.");
+                                    Files.move(path, poolPath.resolve(path.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                                }
+                            }
+                            catch (IOException F)
+                            {
+                                logger.info("    §cError moving file. Is something accessing it?");
+                            }
+
+                            // And finally, add it to the pool.
+                            pool.getList().add(JsonToNBT.getTagFromJson(contents));
                         }
                         catch(JsonSyntaxException F)
                         {
                             foundError = true;
-                            Files.move(file.toPath(), brokenPath);
-                            logger.error("    File " + file.getName() + " failed validation, please check syntax! Skipping.");
+                            Files.move(path, brokenPath.resolve(path.getFileName()));
+                            logger.info("    §cFile §4" + path.getFileName() + "§c failed syntax validation!");
                         }
                         catch (NBTException F)
                         {
                             foundError = true;
-                            Files.move(file.toPath(), brokenPath);
-                            logger.error("    File " + file.getName() + " could not be parsed as NBT, please check syntax! Skipping.");
+                            Files.move(path, brokenPath.resolve(path.getFileName()));
+                            logger.info("    §cFile §4" + path.getFileName() + "§c could not be parsed as NBT!");
                         }
                     }
                 }
@@ -90,165 +143,44 @@ public class IOMethods
             }
 
             if (foundError)
-            logger.error("    Broken files have been moved to the \"broken\" folder.");
+                logger.info("    §cBroken files were moved to the \"§4broken§c\" folder. Please check their syntax.");
 
-            // TODO: Set config pool count.
-            // Are we still lacking Pokémon? Fill the pool to the cap with fresh normal ones.
-            if (pool.size() < 100)
-            {
-                // TODO: Set config pool count.
-                // Subtract the current count from 100. The remaining number is the number of Pokémon we need to generate.
-                int i = 100 - pool.size();
-                while (i > 0)
-                {
-                    // Get a random Pokémon and initialize it. Make sure it's not legendary through the arg.
-                    Pokemon pokemon = Pixelmon.pokemonFactory.create(EnumSpecies.randomPoke(false))/*.initialize()*/;
 
-                    // We can still get Ultra Beasts, so let's reroll those.
-                    while (EnumSpecies.ultrabeasts.contains(pokemon.getSpecies().getPokemonName()))
-                    {
-                        logger.warn("Got an Ultra Beast for pool slot " + i + ", ew!");
-                        pokemon = Pixelmon.pokemonFactory.create(EnumSpecies.randomPoke(false));
-                    }
-
-                    // Get NBT data for the new Pokémon.
-                    final NBTTagCompound pokemonNBT = pokemon.writeToNBT(new NBTTagCompound());
-
-                    // Add the new Pokémon to our pool.
-                    pool.add(pokemonNBT);
-
-                    // Write a random Pokémon to disk, and register the returned Path (as a File) internally.
-                    Path pokemonPath = writePokemonAndGetPath(pokemon);
-
-                    // We good? Move on to the next Pokémon.
-                    if (pokemonPath != null)
-                        i--;
-                }
             }
         }
         catch (IOException F)
         {
             logger.fatal("    A fatal I/O error occurred while trying to access the Pokémon files. Stack trace:");
             F.printStackTrace();
-            logger.fatal("    Please report this issue, and include the above stack trace. Aborting mod load.");
+            logger.fatal("    Please report this issue, and include the above stack trace. Aborting.");
+
             return false;
         }
 
         return true;
     }
 
-    // Parse a Pokémon's NBT data into a prettified JSON-like format that we can directly import again later.
-    public static Path writePokemonAndGetPath(Pokemon pokemon)
+    // See how many special Pokémon (legendaries, UBs, shinies) are in our pool. Write this to the global Map variable.
+    public static HashMap<String, Integer> getCounts()
     {
-        // Extract Pokémon NBT into a String representation of MC's JSON-like format.
-        final NBTTagCompound dirtyNBT = pokemon.writeToNBT(new NBTTagCompound());
+        HashMap<String, Integer> counts = new HashMap<>();
 
-        // Replace quotes with placeholder Strings. Gson, later, will wrap field names, which we can then undo.
-        // TODO: Find a less hacky way of doing this. Should be safe (Pixelmon's data is predictable), but yeah.
-        String dirtyJson = dirtyNBT.toString().replace(":\"", ":\"§PLACEHOLDER§");
-        dirtyJson = dirtyJson.replace("\",", "§PLACEHOLDER§\",");
-
-        /*// Iterate over the NBT keys. MC dislikes JSON's field quotes, but we want to preserve String ones.
-        for (String s : dirtyNBT.getKeySet())
-        {
-            // Get the tag we're looking at right now.
-            NBTBase currentTag = dirtyNBT.getTag(s);
-
-            // Is our tag a String?
-            if (currentTag instanceof NBTTagString)
-            {
-                *//*// Trash escape characters ("\") as they mess up parsing. Gson will escape double quotes later.
-                String fixedString = ((NBTTagString) currentTag).getString().replace("\\", "");
-
-                // Add placeholders for later replacement, once the field quotes are gone.
-                fixedString = "§PLACEHOLDER§" + fixedString + "§PLACEHOLDER§";*//*
-
-                // Add placeholders for later replacement, once the field quotes are gone.
-                final String fixedString = "§PLACEHOLDER§" + ((NBTTagString) currentTag).getString() + "§PLACEHOLDER§";
-
-                // Overwrite the old String with a fixed one.
-                dirtyNBT.setString(s, fixedString);
-            }
-        }*/
-
-        // We format/prettify our rough JSON with Gson. Disable escaping to avoid Unicode conversion. ("&" to "/u0026")
-        GsonBuilder builder = new GsonBuilder().setPrettyPrinting().disableHtmlEscaping();
-
-        // Create our pretty file. Much easier to edit, that way. Forge/MC don't care about spaces/tabs, easy import!
-        String cleanJson = builder.create().toJson(new JsonParser().parse(dirtyJson));
-
-        // Remove Gson's excess quotes and strip potentially-dangerous backslashes. Makes us MC-compliant again.
-        cleanJson = cleanJson.replace("\"", "").replace("\\", "");
-
-        // Add quotes back in where they're actually needed.
-        cleanJson = cleanJson.replace("§PLACEHOLDER§", "\"");
-
-        try
-        {
-            // Get some shorthand variables for Pokémon data.
-            final String name = pokemon.getSpecies().getPokemonName();
-            final String uuid = pokemon.getUUID().toString();
-
-            // Write our "JSON" to a file named after the Pokémon's UUID. Force UTF-8 to store characters properly.
-            return Files.write(Paths.get(poolPath.toString(), name + '-' + uuid + ".txt"), cleanJson.getBytes(StandardCharsets.UTF_8));
-        }
-        catch (IOException F)
-        {
-            logger.fatal("Writing failed! Trace:");
-            F.printStackTrace();
-        }
-
-        return null;
-    }
-
-    // See how many Ultra Beasts are in our pool.
-    public static int getUBCount()
-    {
-        int count = 0;
-
-        for (NBTTagCompound compound : pool)
+        // Start upping the counts based on what we find in the pool.
+        for (NBTTagCompound compound : pool.getList())
         {
             if (EnumSpecies.ultrabeasts.contains(compound.getString("Name")))
-            {
-                logger.info("Detected Pokémon " + compound.getString("Name") + " as an Ultra Beast.");
-                count++;
-            }
+                counts.merge("UBs", 1, Integer::sum);
+            else if (EnumSpecies.legendaries.contains(compound.getString("Name")))
+                counts.merge("Legendaries", 1, Integer::sum);
+            else if (compound.getBoolean("IsShiny"))
+                counts.merge("Shinies", 1, Integer::sum);
         }
 
-        return count;
-    }
+        // If we find no Pokémon of a given type, anything grabbing counts will get a null! To avoid that, set 0 here.
+        counts.putIfAbsent("UBs", 0);
+        counts.putIfAbsent("Legendaries", 0);
+        counts.putIfAbsent("Shinies", 0);
 
-    // See how many legendaries are in our pool.
-    public static int getLegendaryCount()
-    {
-        int count = 0;
-
-        for (NBTTagCompound compound : pool)
-        {
-            if (EnumSpecies.legendaries.contains(compound.getString("Name")))
-            {
-                logger.info("Detected Pokémon " + compound.getString("Name") + " as a legendary.");
-                count++;
-            }
-        }
-
-        return count;
-    }
-
-    // See how many shinies are in our pool.
-    public static int getShinyCount()
-    {
-        int count = 0;
-
-        for (NBTTagCompound compound : pool)
-        {
-            if (compound.getBoolean("IsShiny"))
-            {
-                logger.info("Detected Pokémon " + compound.getString("Name") + " as a shiny.");
-                count++;
-            }
-        }
-
-        return count;
+        return counts;
     }
 }
